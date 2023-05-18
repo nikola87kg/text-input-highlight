@@ -1,0 +1,26 @@
+.component-wrapper {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  flex-direction: column;
+}
+
+div#highlight-input {
+  border: 1px solid #989898;
+  box-sizing: border-box;
+  background: #f7f7f7;
+  width: 500px;
+  min-height: 50px;
+  margin: 10px 0;
+  padding: 5px;
+}
+
+::ng-deep {
+  .highlight-blue {
+    color: #1c19e6;
+  }
+
+  .highlight-green {
+    color: #24e424;
+  }
+}

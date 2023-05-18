@@ -1,31 +1,3 @@
-.component-wrapper {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  flex-direction: column;
-}
-
-input#input-text {
-  width: 400px;
-  box-sizing: border-box;
-  padding: 5px 10px;
-  margin: 10px 0;
-}
-
-div#highlight-input {
-  border: 1px solid #989898;
-  box-sizing: border-box;
-  background: #e6e6e6;
-  width: 400px;
-  min-height: 50px;
-  margin: 10px 0;
-  padding: 5px;
-}
-
-.highlight-blue {
-  background: #7cb5d8;
-}
-
-.highlight-green {
-  background: #7cbf7c;
+div.sample {
+  margin: 20px 0;
 }

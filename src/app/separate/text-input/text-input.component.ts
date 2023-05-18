@@ -1,5 +1,12 @@
-import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core';
-import { FormControl } from '@angular/forms';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, ViewChild } from '@angular/core';
+import { Subject, debounceTime } from 'rxjs';
+
+interface HighlightProps {
+  text: string,
+  color: Colors,
+  regex: RegExp,
+  ignoreRegex: RegExp,
+}
 
 interface Highlight {
   color: string,
@@ -19,48 +26,86 @@ enum Colors {
   styleUrls: ['./text-input.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class TextInputComponent implements OnInit {
+export class TextInputComponent {
+  @ViewChild("textDiv") textDiv!: ElementRef;
   highlightedText!: string | null;
-  inputControl: FormControl<string>;
-  inputTextHandler: (text: string) => void;
+  debounceTrigger: Subject<void> = new Subject<void>();
+  anchorSelection = 0;
 
-  constructor() {
-    this.inputControl = new FormControl<string>('', { nonNullable: true });
-    this.inputTextHandler = (text: string) => this.handleHighlights(text);
+  private greenRegex = /{[^{}]+}/g;
+  private blueRegex = /\[([^\[\]]+)\]|\{([^{}]+)\}/g;
+  private bracketsRegex = /[\[\]]/;
+  private curlyRegex = /[{}]/;
+
+  constructor(private cdr: ChangeDetectorRef) { }
+
+  ngOnInit() {
+    this.debounceTrigger
+      .pipe(debounceTime(1000))
+      .subscribe(() => {
+        this.handleHighlights();
+      });
   }
 
-  ngOnInit(): void {
-    this.listenInputChanges();
-  }
+  handleHighlights(): void {
+    const text = this.textDiv.nativeElement.innerText;
+    this.anchorSelection = window.getSelection()?.anchorOffset || 0;
 
-  listenInputChanges() {
-    this.inputControl
-      .valueChanges
-      .subscribe(this.inputTextHandler);
-  }
+    const greenProps: HighlightProps = {
+      text,
+      color: Colors.green,
+      regex: this.greenRegex,
+      ignoreRegex: this.bracketsRegex
+    };
 
-  handleHighlights(text: string): void {
-    const greenRegex = /\{(.*?)\}/g;
-    const greenMatches = this.getHighlights(text, Colors.green, greenRegex);
+    const greenMatches = this.getHighlights(greenProps);
 
-    const blueRegex = /\[(.*?)\]/g;
-    const blueMatches = this.getHighlights(text, Colors.blue, blueRegex);
+    const blueProps: HighlightProps = {
+      text,
+      color: Colors.blue,
+      regex: this.blueRegex,
+      ignoreRegex: this.curlyRegex
+    };
 
-    const highlights: Highlight[] = [...greenMatches, ...blueMatches];
+    const blueMatches = this.getHighlights(blueProps);
+
+    const highlights: Highlight[] = [
+      ...greenMatches,
+      ...blueMatches
+    ];
 
     this.highlightedText = this.getInnerHtml(highlights, text);
+
+    this.cdr.detectChanges();
+    // Note for reviewer: change detection makes a problem about a contenteditable cursor,
+    // it jumps to beginning, and I could not find a simple way to fix it.
+    // There is a solution with window.getSelection method, but it requires
+    // a heavy calculations about a cursor position.
   }
 
-  getHighlights(text: string, color: Colors, regex: RegExp): Highlight[] {
+
+  getHighlights(props: HighlightProps): Highlight[] {
     const highlights: Highlight[] = [];
-    const matches = [...text.matchAll(regex)];
-    matches.forEach((match) => {
+    const matches: RegExpMatchArray[] = [...props.text.matchAll(props.regex)];
+
+    matches.forEach((match: RegExpMatchArray) => {
+      const isMatchIgnored = this.testMatch(props.ignoreRegex, match[0]);
+      if (isMatchIgnored) {
+        return;
+      }
+
       const start = match.index || 0;
       const end = start + match[0].length;
       const input = match.input?.substring(start, end) || '';
+      const color = props.color;
       highlights.push({ color, start, end, input });
     });
+
     return highlights;
+  }
+
+  testMatch(regex: RegExp, match: string): boolean {
+    return regex.test(match);
   }
 
   getInnerHtml(highlights: Highlight[], text: string): string {

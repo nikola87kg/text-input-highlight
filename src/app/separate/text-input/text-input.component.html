@@ -1,14 +1,13 @@
 <div class="component-wrapper">
 
-  Input:
-  <input type="text"
-    id="input-text"
-    placeholder="Start typing..."
-    [formControl]="inputControl">
+  Start typing in the block below or paste the sample text:
 
-  Generated output:
-  <div id="highlight-input"
-    [innerHTML]="highlightedText">
+  <div #textDiv
+    (input)="debounceTrigger.next()"
+    [innerHTML]="highlightedText"
+    id="highlight-input"
+    spellcheck="false"
+    contenteditable="true">
   </div>
 
 </div>
