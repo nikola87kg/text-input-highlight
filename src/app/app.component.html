@@ -1,4 +1,8 @@
-<app-text-input />
+<app-text-input *ngIf="isVisible" />
+
+<button (click)="isVisible = !isVisible">
+  {{isVisible ? 'Hide Block' : 'Show Block'}}
+</button>
 
 <div class="sample">
   <b>Sample content:</b> {{sampleContent}}

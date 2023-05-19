@@ -1,5 +1,5 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, ViewChild } from '@angular/core';
-import { Subject, debounceTime } from 'rxjs';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { Subject, Subscription, debounceTime } from 'rxjs';
 
 interface HighlightProps {
   text: string,
@@ -26,7 +26,7 @@ enum Colors {
   styleUrls: ['./text-input.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class TextInputComponent {
+export class TextInputComponent implements OnInit, OnDestroy {
   @ViewChild("textDiv") textDiv!: ElementRef;
   highlightedText!: string | null;
   debounceTrigger: Subject<void> = new Subject<void>();
@@ -36,20 +36,24 @@ export class TextInputComponent {
   private blueRegex = /\[([^\[\]]+)\]|\{([^{}]+)\}/g;
   private bracketsRegex = /[\[\]]/;
   private curlyRegex = /[{}]/;
+  private subscription!: Subscription;
 
   constructor(private cdr: ChangeDetectorRef) { }
 
   ngOnInit() {
-    this.debounceTrigger
+    this.subscription = this.debounceTrigger
       .pipe(debounceTime(1000))
       .subscribe(() => {
         this.handleHighlights();
       });
   }
 
+  ngOnDestroy() {
+    this.subscription?.unsubscribe();
+  }
+
   handleHighlights(): void {
     const text = this.textDiv.nativeElement.innerText;
-    this.anchorSelection = window.getSelection()?.anchorOffset || 0;
 
     const greenProps: HighlightProps = {
       text,
@@ -76,13 +80,86 @@ export class TextInputComponent {
 
     this.highlightedText = this.getInnerHtml(highlights, text);
 
+    const anchorIndex = this.getCursor();
     this.cdr.detectChanges();
-    // Note for reviewer: change detection makes a problem about a contenteditable cursor,
-    // it jumps to beginning, and I could not find a simple way to fix it.
-    // There is a solution with window.getSelection method, but it requires
-    // a heavy calculations about a cursor position.
+
+    this.setCursor(anchorIndex);
   }
 
+  getCursor(): number {
+    const selection: Selection | null = window.getSelection();
+    if (!selection) {
+      return 0;
+    }
+    let element = selection?.anchorNode as any;
+    if (element.parentNode.localName === 'span') {
+      element = element.parentNode;
+    }
+    const anchorOffset = selection?.anchorOffset || 0;
+    const parent = document.getElementById("highlight-input");
+    let nodeIndex = 0;
+    let anchorIndex = 0;
+
+    if (parent && element) {
+      nodeIndex = Array.from(parent?.childNodes).indexOf(element);
+
+      const nodeLength = parent?.childNodes?.length || 0;
+      for (let i = 0; i < nodeLength; i++) {
+        const n: any = parent?.childNodes[i];
+        const nodeData = n.data || n.innerText;
+
+        const nodeLength = nodeData?.length || 0;
+        if (nodeIndex > i) {
+          anchorIndex += nodeLength;
+          continue;
+        }
+        anchorIndex += anchorOffset;
+        break;
+      }
+    }
+
+    return anchorIndex;
+
+  }
+
+  setCursor(anchorIndex: number) {
+    const parent = document.getElementById("highlight-input");
+    const range = document.createRange();
+    const sel = window.getSelection();
+
+    if (parent && sel) {
+      let nodeIndex = 0;
+      let selectionIndex = 0;
+      let currentLength = 0;
+
+      const nodeLength = parent?.childNodes?.length || 0;
+
+      for (let i = 0; i < nodeLength; i++) {
+        const n: any = parent?.childNodes[i];
+        const nodeData = n.data || n.innerText;
+        const nodeLength = nodeData?.length || 0;
+        if (anchorIndex > (nodeLength + currentLength)) {
+          currentLength += nodeLength;
+          continue;
+        }
+        nodeIndex = i;
+        selectionIndex = anchorIndex - currentLength;
+        break;
+      }
+
+      const node = parent.childNodes[nodeIndex]?.firstChild
+        || parent.childNodes[nodeIndex];
+
+      if (node) {
+        range.setStart(node, selectionIndex);
+        range.collapse(true);
+
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+
+    };
+  }
 
   getHighlights(props: HighlightProps): Highlight[] {
     const highlights: Highlight[] = [];
