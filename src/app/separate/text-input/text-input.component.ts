@@ -1,23 +1,16 @@
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { Subject, Subscription, debounceTime } from 'rxjs';
 
-interface HighlightProps {
-  text: string,
-  color: Colors,
-  regex: RegExp,
-  ignoreRegex: RegExp,
-}
-
-interface Highlight {
-  color: string,
-  start: number,
-  end: number,
-  input: string,
-}
-
-enum Colors {
-  green = 'green',
-  blue = 'blue',
+enum SpecialChars {
+  bracketOpen = '[',
+  bracketClose = ']',
+  bracketColor = 'blue',
+  curlyOpen = '{',
+  curlyClose = '}',
+  curlyColor = 'green',
+  parenthesesOpen = '(',
+  parenthesesClose = ')',
+  parenthesesColor = 'red',
 }
 
 @Component({
@@ -31,18 +24,23 @@ export class TextInputComponent implements OnInit, OnDestroy {
   highlightedText!: string | null;
   debounceTrigger: Subject<void> = new Subject<void>();
   anchorSelection = 0;
-
-  private greenRegex = /{[^{}]+}/g;
-  private blueRegex = /\[([^\[\]]+)\]|\{([^{}]+)\}/g;
-  private bracketsRegex = /[\[\]]/;
-  private curlyRegex = /[{}]/;
   private subscription!: Subscription;
+  openers = [
+    SpecialChars.bracketOpen,
+    SpecialChars.curlyOpen,
+    SpecialChars.parenthesesOpen
+  ];
+  closers = [
+    SpecialChars.bracketClose,
+    SpecialChars.curlyClose,
+    SpecialChars.parenthesesClose
+  ];
 
   constructor(private cdr: ChangeDetectorRef) { }
 
   ngOnInit() {
     this.subscription = this.debounceTrigger
-      .pipe(debounceTime(1000))
+      .pipe(debounceTime(300))
       .subscribe(() => {
         this.handleHighlights();
       });
@@ -55,30 +53,7 @@ export class TextInputComponent implements OnInit, OnDestroy {
   handleHighlights(): void {
     const text = this.textDiv.nativeElement.innerText;
 
-    const greenProps: HighlightProps = {
-      text,
-      color: Colors.green,
-      regex: this.greenRegex,
-      ignoreRegex: this.bracketsRegex
-    };
-
-    const greenMatches = this.getHighlights(greenProps);
-
-    const blueProps: HighlightProps = {
-      text,
-      color: Colors.blue,
-      regex: this.blueRegex,
-      ignoreRegex: this.curlyRegex
-    };
-
-    const blueMatches = this.getHighlights(blueProps);
-
-    const highlights: Highlight[] = [
-      ...greenMatches,
-      ...blueMatches
-    ];
-
-    this.highlightedText = this.getInnerHtml(highlights, text);
+    this.highlightedText = this.getInnerHtml(text);
 
     const anchorIndex = this.getCursor();
     this.cdr.detectChanges();
@@ -161,55 +136,80 @@ export class TextInputComponent implements OnInit, OnDestroy {
     };
   }
 
-  getHighlights(props: HighlightProps): Highlight[] {
-    const highlights: Highlight[] = [];
-    const matches: RegExpMatchArray[] = [...props.text.matchAll(props.regex)];
+  getInnerHtml(text: string): any {
+    let innerHtml: string = '';
+    let highlightCandidate = '';
+    let openHighlight = false;
+    let activeOpener = '';
 
-    matches.forEach((match: RegExpMatchArray) => {
-      const isMatchIgnored = this.testMatch(props.ignoreRegex, match[0]);
-      if (isMatchIgnored) {
-        return;
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i] as any;
+
+      if (openHighlight && this.openers.includes(char)) {
+        innerHtml += highlightCandidate;
+        highlightCandidate = char;
+        activeOpener = char;
+
+      } else if (openHighlight && char && char === this.getCloser(activeOpener)) {
+        highlightCandidate += char;
+        innerHtml += this.getColorWrapper(highlightCandidate);
+        highlightCandidate = '';
+        openHighlight = false;
+        activeOpener = '';
+
+      } else if (openHighlight && char && this.closers.includes(char)) {
+        highlightCandidate += char;
+        innerHtml += highlightCandidate;
+        highlightCandidate = '';
+        openHighlight = false;
+        activeOpener = '';
+
+      } else if (!openHighlight && this.openers.includes(char)) {
+        highlightCandidate = char;
+        openHighlight = true;
+        activeOpener = char;
+
+      } else if (openHighlight) {
+        highlightCandidate += char;
+
+      } else if (!openHighlight) {
+        innerHtml += char;
       }
 
-      const start = match.index || 0;
-      const end = start + match[0].length;
-      const input = match.input?.substring(start, end) || '';
-      const color = props.color;
-      highlights.push({ color, start, end, input });
-    });
-
-    return highlights;
-  }
-
-  testMatch(regex: RegExp, match: string): boolean {
-    return regex.test(match);
-  }
-
-  getInnerHtml(highlights: Highlight[], text: string): string {
-    let innerHtml = '';
-    let lastTextIndex = 0;
-    highlights.sort((a, b) => a.start - b.start);
-
-    highlights.forEach((highlight) => {
-      if (highlight.start > lastTextIndex) {
-        innerHtml += text.substring(lastTextIndex, highlight.start);
-        lastTextIndex = highlight.start;
-      }
-
-      if (lastTextIndex <= highlight.start) {
-        innerHtml += this.getColorWrapper(highlight);
-        lastTextIndex = highlight.end;
-      }
-    });
-
-    if (lastTextIndex < text.length) {
-      innerHtml += text.substring(lastTextIndex, text.length);
     }
-
     return innerHtml;
   }
 
-  getColorWrapper(highlight: Highlight): string {
-    return `<span class="highlight-${highlight.color}">${highlight.input}</span>`;
+  getCloser(char: string) {
+    let closer = '';
+    switch (char) {
+      case SpecialChars.bracketOpen:
+        closer = SpecialChars.bracketClose;
+        break;
+      case SpecialChars.curlyOpen:
+        closer = SpecialChars.curlyClose;
+        break;
+      case SpecialChars.parenthesesOpen:
+        closer = SpecialChars.parenthesesClose;
+        break;
+    }
+    return closer;
+  }
+
+  getColorWrapper(input: string): string {
+    const firstChar = input.charAt(0);
+    let color = '';
+    switch (firstChar) {
+      case SpecialChars.bracketOpen:
+        color = SpecialChars.bracketColor;
+        break;
+      case SpecialChars.curlyOpen:
+        color = SpecialChars.curlyColor;
+        break;
+      case SpecialChars.parenthesesOpen:
+        color = SpecialChars.parenthesesColor;
+        break;
+    }
+    return `<span class="highlight-${color}">${input}</span>`;
   }
 }
